@@ -1,0 +1,3 @@
+rootProject.name = 'spectra-project'
+include 'community', 'notify', 'users', 'shared-module'
+
