@@ -1,0 +1,155 @@
+
+services:
+  community:
+    image: community
+    container_name: community
+    build:
+      context: .
+      dockerfile: community/Dockerfile
+    depends_on:
+      community_bd:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://community_bd:5432/${COMMUNITY_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${COMMUNITY_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${COMMUNITY_DB_PASSWORD}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_CONSUMER_GROUP_ID: ${KAFKA_GROUP_ID}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      API_USER-SERVICE_URL: users:8081
+      JWT_SECRET: ${JWT_SECRET_KEY}
+    networks:
+      - spectra-network
+  users:
+    image: users
+    container_name: users
+    build:
+      context: .
+      dockerfile: users/Dockerfile
+    depends_on:
+      users_bd:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://users_bd:5432/${USERS_DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${USERS_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${USERS_DB_PASSWORD}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET_KEY}
+      JWT_EXPIRATION: ${JWT_EXPIRATION}
+    networks:
+      - spectra-network
+  notify:
+    image: notify
+    container_name: notify
+    build:
+      context: .
+      dockerfile: notify/Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_CONSUMER_GROUP_ID: ${KAFKA_GROUP_ID}
+      API_USER-SERVICE_URL: users:8081
+      SPRING_MAIL_HOST: ${SMTP_MAIL_HOST}
+      SPRING_MAIL_PORT: ${SMTP_MAIL_PORT}
+      SPRING_MAIL_USERNAME: ${SMTP_MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${SMTP_MAIL_PASSWORD}
+    networks:
+      - spectra-network
+  community_bd:
+    image: postgres:17.0
+    container_name: community_bd
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${COMMUNITY_DB_PASSWORD}
+      POSTGRES_USER: ${COMMUNITY_DB_USER}
+      POSTGRES_DB: ${COMMUNITY_DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${COMMUNITY_DB_USER} -d ${COMMUNITY_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - community-db-data:/var/lib/postgresql/data
+    networks:
+      - spectra-network
+  users_bd:
+    image: postgres:17.0
+    container_name: users_bd
+    ports:
+      - "5431:5432"
+    environment:
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD}
+      POSTGRES_USER: ${USERS_DB_USER}
+      POSTGRES_DB: ${USERS_DB_NAME}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${USERS_DB_USER} -d ${USERS_DB_NAME}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    networks:
+      - spectra-network
+  kafka:
+    image: apache/kafka:3.7.2
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_RETENTION_MS: 60000
+      KAFKA_RETENTION_BYTES: 1073741824
+      KAFKA_CREATE_TOPICS: "user-delete:1:1,new-post:1:1,new-comment:1:1,new-reaction:1:1,registration-code:1:1"
+    healthcheck:
+      test: [ "CMD", "/opt/kafka/bin/kafka-topics.sh", "--list", "--bootstrap-server", "localhost:9092" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - spectra-network
+  redis:
+    image: redis
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - spectra-network
+
+networks:
+  spectra-network:
+    driver: bridge
+
+volumes:
+  community-db-data:
+  users-db-data:

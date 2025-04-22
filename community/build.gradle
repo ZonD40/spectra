@@ -31,7 +31,6 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.kafka:spring-kafka'
-	implementation 'io.lettuce:lettuce-core'
 	implementation 'org.postgresql:postgresql:42.7.5'
 	implementation project(':shared-module')
 	compileOnly 'org.projectlombok:lombok'
