@@ -15,6 +15,6 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
 
     Stream<UserEntity> streamAllBy();
 
-    Stream<UserEntity> streamAllById(List<Long> ids);
+    Stream<UserEntity> streamAllByIdIn(List<Long> ids);
 
 }

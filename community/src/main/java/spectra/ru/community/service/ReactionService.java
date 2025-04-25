@@ -89,7 +89,7 @@ public class ReactionService {
                         )
                 );
 
-        if (reactionEntity.getUserId().equals(userId)) {
+        if (!reactionEntity.getUserId().equals(userId)) {
             throw new BadRequestException("Only creator can delete a reaction");
         }
 

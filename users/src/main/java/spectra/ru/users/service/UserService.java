@@ -214,7 +214,7 @@ public class UserService implements UserDetailsService {
 
     public List<String> batchEmail(List<Long> userIdList) {
 
-        Stream<UserEntity> userEntityStream = userRepository.streamAllById(userIdList);
+        Stream<UserEntity> userEntityStream = userRepository.streamAllByIdIn(userIdList);
 
         return userEntityStream.map(UserEntity::getEmail).toList();
     }

@@ -146,7 +146,7 @@ public class MessageService {
                         )
                 );
 
-        if (messageEntity.getUserId().equals(userId)) {
+        if (!messageEntity.getUserId().equals(userId)) {
             throw new BadRequestException("Only creator can delete a message");
         }
 
@@ -164,7 +164,7 @@ public class MessageService {
                 )
         );
 
-        if (messageEntity.getUserId().equals(userId)) {
+        if (!messageEntity.getUserId().equals(userId)) {
             throw new BadRequestException("Only creator can edit a message");
         }
 
