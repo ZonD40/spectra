@@ -48,6 +48,8 @@ public class UserService implements UserDetailsService {
 
     final RedisTemplate<String, UserCreateDto> userRedisTemplate;
 
+    final Random random;
+
     @Value("${jwt.secret}")
     String jwtSecret;
 
@@ -62,14 +64,12 @@ public class UserService implements UserDetailsService {
         String email = userCreateDto.getEmail().trim();
 
         userRepository.findByEmail(email).ifPresent(userEntity -> {
-            throw
-                    new BadRequestException(
+            throw new BadRequestException(
                             String.format("User with email \"%s\" is already exist!", userEntity.getEmail())
                     );
         });
 
         String verificationKey = VERIFICATION_KEY_PREFIX + email;
-        Random random = new Random();
         Integer code = random.nextInt(100000, 1000000);
 
         codeRedisTemplate.opsForValue().set(verificationKey, code, Duration.ofMinutes(5));
@@ -102,6 +102,10 @@ public class UserService implements UserDetailsService {
 
         UserCreateDto userCreateDto = userRedisTemplate.opsForValue().get(pendingKey);
 
+        if (userCreateDto == null) {
+            throw new BadRequestException("Invalid code");
+        }
+
         UserEntity userEntity = userRepository.save(UserEntity
                 .builder()
                 .name(userCreateDto.getName().trim())
@@ -116,10 +120,10 @@ public class UserService implements UserDetailsService {
     }
 
     public String authenticate(UserAuthenticateDto userAuthenticateDto) {
-        Optional<UserEntity> optionalUserEntity = userRepository.findByEmail(userAuthenticateDto.getEmail());
+        Optional<UserEntity> optionalUserEntity = userRepository.findByEmail(userAuthenticateDto.getEmail().trim());
 
         if (optionalUserEntity.isEmpty()
-                || !passwordEncoder.matches(userAuthenticateDto.getPassword(), optionalUserEntity.get().getPassword())) {
+                || !passwordEncoder.matches(userAuthenticateDto.getPassword().trim(), optionalUserEntity.get().getPassword().trim())) {
             throw new NotFoundExeption("invalid credentials");
         }
 
