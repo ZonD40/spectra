@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import spectra.ru.users.api.dto.AnswerDto;
 import spectra.ru.users.api.dto.user.UserAuthenticateDto;
@@ -25,7 +26,7 @@ public class UserController {
     UserService userService;
 
     @PostMapping
-    public AnswerDto register(@RequestBody UserCreateDto userCreateDto) {
+    public AnswerDto register(@Validated @RequestBody UserCreateDto userCreateDto) {
         return userService.register(userCreateDto);
     }
 
@@ -38,7 +39,7 @@ public class UserController {
     }
 
     @PostMapping("/authenticate")
-    public String authenticate(@RequestBody UserAuthenticateDto userAuthenticateDto) {
+    public String authenticate(@Validated @RequestBody UserAuthenticateDto userAuthenticateDto) {
         return userService.authenticate(userAuthenticateDto);
     }
 

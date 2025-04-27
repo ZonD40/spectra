@@ -6,6 +6,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -28,8 +32,10 @@ import spectra.ru.users.TestUtils;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Random;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -76,6 +82,14 @@ class UserServiceTest {
 
     private static UserAuthenticateDto defaultUserAuthenticateDto;
 
+    private static Stream<Arguments> updateProviderFactory() {
+        return Stream.of(
+                Arguments.of(new UserCreateDto("John", "John123@mail.ru", ""), "password"),
+                Arguments.of(new UserCreateDto("John", "", "pass"), "email"),
+                Arguments.of(new UserCreateDto("", "John123@mail.ru", "pass"), "name")
+                );
+    }
+
     @BeforeAll()
     static void initAll() {
         defaultUserEntity = UserEntity
@@ -114,9 +128,10 @@ class UserServiceTest {
 
     @Test
     void registerExceptionTest() {
-        when(userRepository.findByEmail(defaultUserCreateDto.getEmail().trim())).thenReturn(Optional.of(new UserEntity()));
+        when(userRepository.findByEmail(defaultUserCreateDto.getEmail().trim())).thenReturn(Optional.of(defaultUserEntity));
 
-        assertThrows(BadRequestException.class, () -> userService.register(defaultUserCreateDto));
+        Exception e = assertThrows(BadRequestException.class, () -> userService.register(defaultUserCreateDto));
+        assertEquals("User with email \"John123@mail.ru\" is already exist!", e.getMessage());
     }
 
     @Test
@@ -219,7 +234,7 @@ class UserServiceTest {
     }
 
     @Test
-    void findExceptionTest() {
+    void findByIdExceptionTest() {
         Long id = 1L;
 
         when(userRepository.findById(id)).thenReturn(Optional.empty());
@@ -229,7 +244,7 @@ class UserServiceTest {
     }
 
     @Test
-    void findTest() {
+    void findByIdTest() {
         Long id = 1L;
 
         when(userRepository.findById(id)).thenReturn(Optional.of(defaultUserEntity));
@@ -238,5 +253,99 @@ class UserServiceTest {
         UserResponseDto result = userService.find(id);
 
         assertEquals(defaultUserResponseDto, result);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"John, John123@mail.ru",
+            ", John123@mail.ru",
+            "John, ",
+            ", "
+    })
+    void findByNameOrEmailTest(String name, String email) {
+        lenient().when(userRepository.streamAllBy()).thenReturn(Stream.of(defaultUserEntity));
+        lenient().when(userRepository.streamAllByNameOrEmail("John", null)).thenReturn(Stream.of(defaultUserEntity));
+        lenient().when(userRepository.streamAllByNameOrEmail(null, "John123@mail.ru")).thenReturn(Stream.of(defaultUserEntity));
+        lenient().when(userRepository.streamAllByNameOrEmail("John", "John123@mail.ru")).thenReturn(Stream.of(defaultUserEntity));
+        when(userDtoFactory.makeUserResponseDto(defaultUserEntity)).thenReturn(defaultUserResponseDto);
+
+        List<UserResponseDto> result = userService.find(name, email);
+
+        assertEquals(List.of(defaultUserResponseDto), result);
+    }
+
+    @Test
+    void deleteExceptoinTest() {
+        Long id = 1L;
+
+        when(userRepository.findById(id)).thenReturn(Optional.empty());
+
+        Exception e = assertThrows(NotFoundExeption.class, () -> userService.delete(id));
+        assertEquals("User with id \"1\" doesn't exist!", e.getMessage());
+    }
+
+    @Test
+    void deleteTest() {
+        Long id = 1L;
+
+        when(userRepository.findById(id)).thenReturn(Optional.of(defaultUserEntity));
+
+        AnswerDto result = userService.delete(id);
+
+        assertTrue(result.getSuccess());
+        verify(userRepository).deleteById(id);
+        verify(deleteKafkaTemplate).send("user-delete", id);
+    }
+
+    @ParameterizedTest
+    @MethodSource("updateProviderFactory")
+    void updateEmptyExceptionTest(UserCreateDto userCreateDto, String propertyName) {
+        Long id = 1L;
+
+        Exception e = assertThrows(BadRequestException.class, () -> userService.update(id, userCreateDto));
+        assertEquals(String.format("Property \"%s\" cannot be empty string", propertyName), e.getMessage());
+    }
+
+    @Test
+    void updateNullExceptionTest() {
+        Long id = 1L;
+        UserCreateDto userCreateDto = new UserCreateDto();
+
+        Exception e = assertThrows(BadRequestException.class, () -> userService.update(id, userCreateDto));
+        assertEquals("At least one property must be specified", e.getMessage());
+    }
+
+    @Test
+    void updateNotExistExceptionTest() {
+        Long id = 1L;
+
+        when(userRepository.findById(id)).thenReturn(Optional.empty());
+
+        Exception e = assertThrows(NotFoundExeption.class, () -> userService.update(id, defaultUserCreateDto));
+        assertEquals("User with id \"1\" doesn't exist", e.getMessage());
+    }
+
+    @Test
+    void updateAlreadyExistExceptionTest() {
+        Long id = 1L;
+
+        when(userRepository.findById(id)).thenReturn(Optional.of(defaultUserEntity));
+        when(userRepository.findByEmail(defaultUserCreateDto.getEmail().trim())).thenReturn(Optional.of(defaultUserEntity));
+
+        Exception e = assertThrows(BadRequestException.class, () -> userService.update(id, defaultUserCreateDto));
+        assertEquals("User with email \"John123@mail.ru\" is already exist!", e.getMessage());
+    }
+
+    @Test
+    void updateTest() {
+        Long id = 1L;
+
+        when(userRepository.findById(id)).thenReturn(Optional.of(defaultUserEntity));
+        when(userRepository.findByEmail(defaultUserCreateDto.getEmail().trim())).thenReturn(Optional.empty());
+        when(userDtoFactory.makeUserResponseDto(defaultUserEntity)).thenReturn(defaultUserResponseDto);
+
+        UserResponseDto result = userService.update(id, defaultUserCreateDto);
+
+        assertEquals(defaultUserResponseDto, result);
+        verify(userRepository).save(defaultUserEntity);
     }
 }

@@ -1,5 +1,7 @@
 package spectra.ru.users.api.dto.user;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
@@ -12,16 +14,16 @@ import java.time.Instant;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class UserResponseDto {
 
-    @NonNull
+    @NotNull
     Long id;
 
-    @NonNull
+    @NotNull
     Instant createAt;
 
-    @NonNull
+    @NotBlank
     String name;
 
-    @NonNull
+    @NotBlank
     String email;
 
 }

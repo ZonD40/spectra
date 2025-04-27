@@ -161,7 +161,7 @@ public class UserService implements UserDetailsService {
                 .findById(id)
                 .orElseThrow(() ->
                         new NotFoundExeption(
-                                String.format("User with id \"%s\" doesn't exist", id)
+                                String.format("User with id \"%s\" doesn't exist!", id)
                         )
                 );
 
@@ -174,29 +174,33 @@ public class UserService implements UserDetailsService {
 
     public UserResponseDto update(Long id, UserCreateDto userCreateDto) {
 
+        String emptyErrorMessage = "Property \"%s\" cannot be empty string";
+
         if (userCreateDto.getName() != null && userCreateDto.getName().isBlank()) {
-            throw new BadRequestException("Property \"name\" cannot be empty string");
+            throw new BadRequestException(String.format(emptyErrorMessage, "name"));
         } else if (userCreateDto.getEmail() != null && userCreateDto.getEmail().isBlank()) {
-            throw new BadRequestException("Property \"email\" cannot be empty string");
+            throw new BadRequestException(String.format(emptyErrorMessage, "email"));
         } else if (userCreateDto.getPassword() != null && userCreateDto.getPassword().isBlank()) {
-            throw new BadRequestException("Property \"password\" cannot be empty string");
+            throw new BadRequestException(String.format(emptyErrorMessage, "password"));
+        } else if (userCreateDto.getPassword() == null && userCreateDto.getEmail() == null && userCreateDto.getName() == null) {
+            throw new BadRequestException("At least one property must be specified");
         }
 
         Optional<UserEntity> optionalUserEntity = userRepository.findById(id);
-
-        if (userCreateDto.getEmail() != null) {
-            userRepository.findByEmail(userCreateDto.getEmail().trim()).ifPresent(userEntity -> {
-                throw new BadRequestException(
-                        String.format("User with email \"%s\" is already exist!", userEntity.getEmail())
-                );
-            });
-        }
 
         UserEntity userEntity = optionalUserEntity.orElseThrow(() ->
                 new NotFoundExeption(
                         String.format("User with id \"%s\" doesn't exist", id)
                 )
         );
+
+        if (userCreateDto.getEmail() != null) {
+            userRepository.findByEmail(userCreateDto.getEmail().trim()).ifPresent(foundUserEntity -> {
+                throw new BadRequestException(
+                        String.format("User with email \"%s\" is already exist!", foundUserEntity.getEmail())
+                );
+            });
+        }
 
         userEntity.setName(userCreateDto.getName() == null ? userEntity.getName() : userCreateDto.getName().trim());
         userEntity.setEmail(userCreateDto.getEmail() == null ? userEntity.getEmail() : userCreateDto.getEmail().trim());
