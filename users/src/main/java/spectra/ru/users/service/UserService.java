@@ -103,7 +103,7 @@ public class UserService implements UserDetailsService {
         UserCreateDto userCreateDto = userRedisTemplate.opsForValue().get(pendingKey);
 
         if (userCreateDto == null) {
-            throw new BadRequestException("Invalid code");
+            throw new BadRequestException("User registration data is missing");
         }
 
         UserEntity userEntity = userRepository.save(UserEntity
@@ -204,7 +204,10 @@ public class UserService implements UserDetailsService {
 
         userEntity.setName(userCreateDto.getName() == null ? userEntity.getName() : userCreateDto.getName().trim());
         userEntity.setEmail(userCreateDto.getEmail() == null ? userEntity.getEmail() : userCreateDto.getEmail().trim());
-        userEntity.setPassword(userCreateDto.getPassword() == null ? userEntity.getPassword() : userCreateDto.getPassword().trim());
+        userEntity.setPassword(userCreateDto.getPassword() == null
+                ? userEntity.getPassword()
+                : passwordEncoder.encode(userCreateDto.getPassword().trim())
+        );
 
         userRepository.save(userEntity);
 
@@ -213,9 +216,7 @@ public class UserService implements UserDetailsService {
 
     public List<UserInternalResponseDto> batch(List<Long> userIdList) {
 
-        List<UserEntity> userEntityList = userRepository.findAllById(userIdList);
-
-        Stream<UserEntity> userEntityStream = userEntityList.stream();
+        Stream<UserEntity> userEntityStream = userRepository.streamAllByIdIn(userIdList);
 
         return userEntityStream.map(userDtoFactory::makeUserInternalResponseDto).toList();
     }
@@ -228,12 +229,12 @@ public class UserService implements UserDetailsService {
     }
 
     @Override
-    public UserEntity loadUserByUsername(String username) throws UsernameNotFoundException {
-        Optional<UserEntity> userEntity = userRepository.findByEmail(username);
+    public UserEntity loadUserByUsername(String email) throws UsernameNotFoundException {
+        Optional<UserEntity> userEntity = userRepository.findByEmail(email);
 
         return userEntity.orElseThrow(() ->
                 new UsernameNotFoundException(
-                        String.format("User with email %s doesn't exist", username)
+                        String.format("User with email \"%s\" doesn't exist", email)
                 )
         );
     }
