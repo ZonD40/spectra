@@ -1,21 +1,20 @@
 package spectra.ru.users.filter;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import spectra.ru.users.service.JwtService;
 import spectra.ru.users.service.UserService;
 import spectra.ru.users.store.entities.UserEntity;
 
@@ -23,13 +22,12 @@ import java.io.IOException;
 
 @Component
 @FieldDefaults(level = AccessLevel.PRIVATE)
-@RequiredArgsConstructor
+@AllArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    final UserService userService;
+    UserService userService;
 
-    @Value("${jwt.secret}")
-    String jwtSecret;
+    JwtService jwtService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
@@ -40,12 +38,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(7);
 
             try {
-                String username = Jwts.parser()
-                        .verifyWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()))
-                        .build()
-                        .parseSignedClaims(token)
-                        .getPayload()
-                        .getSubject();
+                Claims claims = jwtService.getClaims(token);
+
+                if (!"access".equals(claims.get("type", String.class))) {
+                    SecurityContextHolder.clearContext();
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token type");
+                    return;
+                }
+
+                String username = claims.getSubject();
 
                 UserEntity userEntity = userService.loadUserByUsername(username);
 
@@ -54,8 +55,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
-
-            } catch (Exception e) {
+            } catch (Exception _) {
                 SecurityContextHolder.clearContext();
             }
         }

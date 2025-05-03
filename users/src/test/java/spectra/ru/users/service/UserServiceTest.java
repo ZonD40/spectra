@@ -1,7 +1,6 @@
 package spectra.ru.users.service;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +19,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import spectra.ru.event.RegistrationCodeEvent;
 import spectra.ru.users.api.dto.AnswerDto;
+import spectra.ru.users.api.dto.user.JwtAuthenticationDto;
 import spectra.ru.users.api.dto.user.UserAuthenticateDto;
 import spectra.ru.users.api.dto.user.UserCreateDto;
 import spectra.ru.users.api.dto.user.UserResponseDto;
@@ -29,7 +29,6 @@ import spectra.ru.users.exceptions.BadRequestException;
 import spectra.ru.users.exceptions.NotFoundExeption;
 import spectra.ru.users.store.entities.UserEntity;
 import spectra.ru.users.store.repository.UserRepository;
-import spectra.ru.users.TestUtils;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -71,6 +70,11 @@ class UserServiceTest {
     @Mock
     private UserDtoFactory userDtoFactory;
 
+    @Mock
+    private JwtService jwtService;
+
+    private final Random random = new Random();
+
     @InjectMocks
     private UserService userService;
 
@@ -85,6 +89,8 @@ class UserServiceTest {
     private static UserCreateDto defaultUserCreateDto;
 
     private static UserAuthenticateDto defaultUserAuthenticateDto;
+
+    private static JwtAuthenticationDto defaultJwtAuthenticationDto;
 
     private static Stream<Arguments> updateExceptionProviderFactory() {
         return Stream.of(
@@ -132,16 +138,28 @@ class UserServiceTest {
         defaultUserCreateDto = new UserCreateDto(DEFAULT_NAME, DEFAULT_EMAIL, "pass");
 
         defaultUserAuthenticateDto = new UserAuthenticateDto(DEFAULT_EMAIL, "pass");
+
+        defaultJwtAuthenticationDto = JwtAuthenticationDto
+                .builder()
+                .token("token")
+                .refreshToken("refresh token")
+                .build();
     }
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, userDtoFactory, passwordEncoder,
-                deleteKafkaTemplate, registrationKafkaTemplate, codeRedisTemplate, userRedisTemplate, new Random());
-
-        String jwtSecret = "veeeeeeeeeeeeeeeeeeryLongSecretKey";
-        TestUtils.setField(userService, "jwtSecret", jwtSecret);
-        TestUtils.setField(userService, "jwtExpiration", 3600000L);
+        // Ручное создание UserService с реальным Random
+        userService = new UserService(
+                userRepository,
+                userDtoFactory,
+                passwordEncoder,
+                jwtService,
+                deleteKafkaTemplate,
+                registrationKafkaTemplate,
+                codeRedisTemplate,
+                userRedisTemplate,
+                random
+        );
     }
 
     @Test
@@ -239,25 +257,54 @@ class UserServiceTest {
 
     @Test
     void authenticateTest() {
-        String jwtSecret = "veeeeeeeeeeeeeeeeeeryLongSecretKey";
-
         when(userRepository.findByEmail(defaultUserAuthenticateDto.getEmail().trim())).thenReturn(Optional.of(defaultUserEntity));
         when(passwordEncoder.matches(defaultUserAuthenticateDto.getPassword().trim(), defaultUserEntity.getPassword().trim())).thenReturn(true);
+        when(jwtService.generateAuthToken(defaultUserEntity.getEmail(), defaultUserEntity.getId())).thenReturn(defaultJwtAuthenticationDto);
 
-        String result = userService.authenticate(defaultUserAuthenticateDto);
+        JwtAuthenticationDto result = userService.authenticate(defaultUserAuthenticateDto);
 
-        var claims = Jwts
-                .parser()
-                .verifyWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()))
-                .build()
-                .parseSignedClaims(result)
-                .getPayload();
+        assertEquals(defaultJwtAuthenticationDto, result);
+    }
 
-        assertEquals(DEFAULT_EMAIL, claims.getSubject());
-        assertEquals("spectra", claims.getIssuer());
-        assertEquals(1L, claims.get("id", Long.class));
-        assertNotNull(claims.getIssuedAt());
-        assertNotNull(claims.getExpiration());
+    @Test
+    void refreshBlacklistExceptionTest() {
+        String refreshToken = "token";
+
+        when(jwtService.isTokenInBlacklist(refreshToken)).thenReturn(true);
+
+        Exception e = assertThrows(BadRequestException.class, () -> userService.refresh(refreshToken));
+        assertEquals("Token is in blacklist", e.getMessage());
+    }
+
+    @Test
+    void refreshInvalidExceptionTest() {
+        String refreshToken = "token";
+        Claims claims = mock(Claims.class);
+
+        when(jwtService.getClaims(refreshToken)).thenReturn(claims);
+        when(claims.getSubject()).thenReturn(DEFAULT_EMAIL);
+        when(userRepository.existsByEmail(DEFAULT_EMAIL)).thenReturn(false);
+        when(jwtService.isTokenInBlacklist(refreshToken)).thenReturn(false);
+
+        Exception e = assertThrows(BadRequestException.class, () -> userService.refresh(refreshToken));
+        assertEquals("Invalid refresh token", e.getMessage());
+    }
+
+    @Test
+    void refreshTest() {
+        String refreshToken = "token";
+        Claims claims = mock(Claims.class);
+
+        when(jwtService.getClaims(refreshToken)).thenReturn(claims);
+        when(claims.getSubject()).thenReturn(DEFAULT_EMAIL);
+        when(claims.get("id", Long.class)).thenReturn(1L);
+        when(userRepository.existsByEmail(DEFAULT_EMAIL)).thenReturn(true);
+        when(jwtService.generateAuthToken(DEFAULT_EMAIL, 1L)).thenReturn(defaultJwtAuthenticationDto);
+
+        JwtAuthenticationDto result = userService.refresh(refreshToken);
+
+        assertEquals(defaultJwtAuthenticationDto, result);
+        verify(jwtService).addTokenToBlacklist(refreshToken);
     }
 
     @Test

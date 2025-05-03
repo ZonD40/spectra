@@ -17,4 +17,6 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
 
     Stream<UserEntity> streamAllByIdIn(List<Long> ids);
 
+    boolean existsByEmail(String email);
+
 }

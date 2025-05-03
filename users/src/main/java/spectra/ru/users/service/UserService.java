@@ -1,12 +1,10 @@
 package spectra.ru.users.service;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.Claims;
 import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -15,6 +13,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import spectra.ru.event.RegistrationCodeEvent;
 import spectra.ru.users.api.dto.AnswerDto;
+import spectra.ru.users.api.dto.user.JwtAuthenticationDto;
 import spectra.ru.users.api.dto.user.UserAuthenticateDto;
 import spectra.ru.users.api.dto.user.UserCreateDto;
 import spectra.ru.users.api.dto.user.UserResponseDto;
@@ -26,35 +25,34 @@ import spectra.ru.users.store.entities.UserEntity;
 import spectra.ru.users.store.repository.UserRepository;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Random;
 import java.util.stream.Stream;
 
 @Service
-@FieldDefaults(level = AccessLevel.PRIVATE)
-@RequiredArgsConstructor
+@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
+@AllArgsConstructor
 public class UserService implements UserDetailsService {
 
-    final UserRepository userRepository;
+    UserRepository userRepository;
 
-    final UserDtoFactory userDtoFactory;
+    UserDtoFactory userDtoFactory;
 
-    final BCryptPasswordEncoder passwordEncoder;
+    BCryptPasswordEncoder passwordEncoder;
 
-    final KafkaTemplate<String, Long> deleteKafkaTemplate;
+    JwtService jwtService;
 
-    final KafkaTemplate<String, RegistrationCodeEvent> registrationKafkaTemplate;
+    KafkaTemplate<String, Long> deleteKafkaTemplate;
 
-    final RedisTemplate<String, Integer> codeRedisTemplate;
+    KafkaTemplate<String, RegistrationCodeEvent> registrationKafkaTemplate;
 
-    final RedisTemplate<String, UserCreateDto> userRedisTemplate;
+    RedisTemplate<String, Integer> codeRedisTemplate;
 
-    final Random random;
+    RedisTemplate<String, UserCreateDto> userRedisTemplate;
 
-    @Value("${jwt.secret}")
-    String jwtSecret;
-
-    @Value("${jwt.expiration}")
-    long jwtExpiration;
+    Random random;
 
     static final String USER_KEY_PREFIX = "pending:user:";
     static final String VERIFICATION_KEY_PREFIX = "verify:email:";
@@ -119,7 +117,7 @@ public class UserService implements UserDetailsService {
         return userDtoFactory.makeUserResponseDto(userEntity);
     }
 
-    public String authenticate(UserAuthenticateDto userAuthenticateDto) {
+    public JwtAuthenticationDto authenticate(UserAuthenticateDto userAuthenticateDto) {
         Optional<UserEntity> optionalUserEntity = userRepository.findByEmail(userAuthenticateDto.getEmail().trim());
 
         if (optionalUserEntity.isEmpty()
@@ -127,7 +125,25 @@ public class UserService implements UserDetailsService {
             throw new NotFoundExeption("invalid credentials");
         }
 
-        return generateToken(optionalUserEntity.get());
+        UserEntity userEntity = optionalUserEntity.get();
+
+        return jwtService.generateAuthToken(userEntity.getEmail(), userEntity.getId());
+    }
+
+    public JwtAuthenticationDto refresh(String token) {
+        Claims claims = jwtService.getClaims(token);
+
+        if (jwtService.isTokenInBlacklist(token)) {
+            throw new BadRequestException("Token is in blacklist");
+        }
+
+        if (!userRepository.existsByEmail(claims.getSubject())) {
+            throw new BadRequestException("Invalid refresh token");
+        }
+
+        jwtService.addTokenToBlacklist(token);
+
+        return jwtService.generateAuthToken(claims.getSubject(), claims.get("id", Long.class));
     }
 
     public UserResponseDto find(Long id) {
@@ -237,17 +253,6 @@ public class UserService implements UserDetailsService {
                         String.format("User with email \"%s\" doesn't exist", email)
                 )
         );
-    }
-
-    private String generateToken(UserEntity userEntity) {
-        return Jwts.builder()
-                .subject(userEntity.getEmail())
-                .issuer("spectra")
-                .claim("id", userEntity.getId())
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
-                .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()))
-                .compact();
     }
 
 }

@@ -8,6 +8,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import spectra.ru.users.api.dto.AnswerDto;
+import spectra.ru.users.api.dto.user.JwtAuthenticationDto;
 import spectra.ru.users.api.dto.user.UserAuthenticateDto;
 import spectra.ru.users.api.dto.user.UserCreateDto;
 import spectra.ru.users.api.dto.user.UserResponseDto;
@@ -39,8 +40,13 @@ public class UserController {
     }
 
     @PostMapping("/authenticate")
-    public String authenticate(@Validated @RequestBody UserAuthenticateDto userAuthenticateDto) {
+    public JwtAuthenticationDto authenticate(@Validated @RequestBody UserAuthenticateDto userAuthenticateDto) {
         return userService.authenticate(userAuthenticateDto);
+    }
+
+    @PostMapping("/refresh")
+    public JwtAuthenticationDto refresh(@RequestBody String refreshToken) {
+        return userService.refresh(refreshToken);
     }
 
     @GetMapping()
