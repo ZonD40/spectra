@@ -15,6 +15,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import spectra.ru.users.api.dto.user.JwtAuthenticationDto;
 
 import java.time.Duration;
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.verify;
@@ -101,14 +102,19 @@ class JwtServiceTest {
 
     @Test
     void getClaimsTest() {
-        String token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ2aXAubGVvbnRldjIwMDJAbWFpbC5ydSIsImlzcyI6InNwZWN0cmEiLCJpZCI6MTMsInR5cGUiOiJhY2Nlc3MiLCJpYXQiOjE3NDYyODQwMTksImV4cCI6MTc0NjI4NzYxOX0.3bd1eYd0vkNBbIiLXDqfzZ_eFsAMqGDB2uUj2LYVLDE";
+        String token = generateToken("test@mail.ru", 1L, "access");
 
         Claims result = jwtService.getClaims(token);
 
+
         assertNotNull(result);
-        assertEquals("vip.leontev2002@mail.ru", result.getSubject());
-        assertEquals(13L, result.get("id", Long.class));
-        assertNotNull(result.getIssuedAt());
+        assertEquals("test@mail.ru", result.getSubject());
+        assertEquals(1L, result.get("id", Long.class));
+        assertEquals("access", result.get("type", String.class));
+
+        long tokenExpirationTime = result.getExpiration().getTime() - result.getIssuedAt().getTime();
+        assertEquals(jwtExpiration, tokenExpirationTime, 1000);
+
         assertEquals("spectra", result.getIssuer());
     }
 
@@ -118,6 +124,18 @@ class JwtServiceTest {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    private String generateToken(String email, Long id, String type) {
+        return Jwts.builder()
+                .subject(email)
+                .issuer("spectra")
+                .claim("id", id)
+                .claim("type", type)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
+                .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()))
+                .compact();
     }
 
 }
